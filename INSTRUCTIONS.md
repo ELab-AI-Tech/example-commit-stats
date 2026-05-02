@@ -1,191 +1,417 @@
-# Day 2 — End-to-end AI development workflow on a real repo
+# commit-stats workshop instructions
 
-Pick the `commit-stats` repo (provided) or a tiny repo of your own. Same one all five exercises. The point is to walk one feature from ticket to merged PR using the workflow we cover in the slide deck. The repo is bash so every developer in the room can read along regardless of stack.
+End-to-end AI development workflow on a small bash repo. Copy-paste your way through. ~90 minutes.
 
-The arc:
+## Prerequisites
 
-- **Ex 1:** turn a vague brief into an aligned plan → `PLAN.md`
-- **Ex 2:** split the plan into vertical slices → `PRD.md` + `issues/*.md`
-- **Ex 3:** ship one slice using TDD → working code + tests + commit
-- **Ex 4:** open a PR, run the self-review, run the code-review, run the security-review → merge gate
-- **Ex 5:** capture one failure as a skill update → close the loop
+```bash
+# macOS
+brew install bash git bats-core shellcheck gh
 
-Each exercise feeds the next. Don't skip.
+# Ubuntu / Debian
+sudo apt-get install -y bash git bats shellcheck gh
+```
+
+You also need an AI agent with skills support. Claude Code is the reference. Codex and Cursor work the same way.
 
 ---
 
-## What you need
+## Setup (5 minutes)
 
-- The `commit-stats/` repo from this Exercises folder (or your own tiny repo)
-- An AI tool with skill support (Claude Code recommended, Codex or Cursor work too)
-- Skills wired up per `commit-stats/SETUP.md`
-- 90 minutes
+### 1. Get the repo on your machine
+
+```bash
+cd ~/work
+cp -R "/path/to/Exercises/commit-stats" .
+cd commit-stats
+```
+
+### 2. Wire skills to your agent
+
+The skills live at `.agent/skills/`. Symlink them to where your agent looks for them.
+
+**Claude Code:**
+
+```bash
+mkdir -p .claude
+ln -s ../.agent/skills .claude/skills
+```
+
+**Cursor:**
+
+```bash
+mkdir -p .cursor
+ln -s ../.agent/skills .cursor/skills
+```
+
+**Codex / other AGENTS.md-aware tools:** the agent reads `AGENTS.md` at the repo root. The skills directory is already referenced in `CLAUDE.md`.
+
+### 3. Sanity check
+
+```bash
+./commit-stats --help     # prints usage
+make lint                  # shellcheck passes (the scaffold is clean)
+make test                  # bats finds zero tests, exits 0
+```
+
+All three must succeed before you start. If `make test` errors with *bats: command not found*, install bats-core (see prerequisites above).
+
+### 4. Start your agent in this directory
+
+```bash
+claude          # or: cursor . / codex / your tool of choice
+```
+
+Once your agent is running, ask:
+
+```
+list the skills you can see
+```
+
+You should see all nine: `plan`, `to-prd`, `to-issues`, `tdd`, `commit`, `pr`, `self-review`, `code-review`, `security-review`. If any are missing, the symlink did not take. Check `ls -la .claude/skills` (or `.cursor/skills`) and the target.
 
 ---
 
 ## Exercise 1 — `/plan` to alignment (~15 min)
 
-**Goal.** End with a `PLAN.md` of resolved decisions that you and the agent both agree on.
+**Goal.** End with `PLAN.md` at the repo root with 10 to 25 resolved decisions you and the agent both agree on.
 
-**Why.** Plan mode is reactive. The IDE jumps in eager and guesses at intent. `/plan` is proactive: the agent interviews you until you share a design concept. This is the highest-leverage habit change in the whole workflow.
+### Step 1.1. Run /plan
 
-**Steps:**
+Paste this into your agent:
 
-- Pick the brief. The default brief for `commit-stats`:
+```
+/plan I want a CLI that scans a git log and prints commit stats. It should show total commits, authors, and how many commits are AI-assisted. I might also want a date filter later. Append every decision to PLAN.md at the repo root. Use UBIQUITOUS_LANGUAGE.md and CLAUDE.md as context.
+```
 
-  > *I want a CLI that scans a git log and prints commit stats. It should show total commits, authors, and how many commits are AI-assisted. I might also want a date filter later.*
+### Step 1.2. Answer one question at a time
 
-- In a fresh agent session, paste:
+The agent will ask you one question at a time and recommend an answer. For each:
 
-  > *Run /plan on this brief, with `commit-stats/UBIQUITOUS_LANGUAGE.md` and `commit-stats/CLAUDE.md` loaded. Append every decision to `PLAN.md` at the repo root.*
+- Read the recommendation.
+- Either say *go with the recommendation* or override with your own answer.
+- *I do not know* is a valid answer — pick the recommendation.
 
-- Answer one question at a time. *"I don't know"* and *"go with the recommendation"* are both fine answers. Expect 10 to 25 questions for this brief.
+Push back when:
 
-- Push back when:
-  - The agent drifts to generic advice (microservices, ORMs, frameworks). *Stay inside this codebase.*
-  - The agent asks two questions in one turn. *One at a time, highest leverage first.*
+- The agent asks two questions in one turn → *one at a time, highest leverage first*.
+- The agent drifts to generic advice (microservices, ORMs) → *stay inside this codebase*.
+- The agent jumps to implementation before requirements are clear → *back up and ask the requirements question first*.
 
-- Say *we're done* when the tree closes.
+### Step 1.3. Stop when the tree closes
 
-**Output.** `PLAN.md` at the repo root. 10 to 25 decisions.
+When the agent stops asking new questions, paste:
+
+```
+we are done. summarise PLAN.md.
+```
+
+Read the summary. If it looks right, you are ready for Exercise 2.
+
+### Step 1.4. Verify the output
+
+```bash
+test -f PLAN.md && wc -l PLAN.md && head -40 PLAN.md
+```
+
+You should see 10 to 25 decisions in `## Q<n>` blocks. If `PLAN.md` is empty, the agent did not append. Re-run `/plan` and tell it to append to `PLAN.md` explicitly.
 
 ---
 
 ## Exercise 2 — Vertical slices (~10 min)
 
-**Goal.** A `PRD.md` and three issue files in `issues/` that the agent could grab and ship one at a time.
+**Goal.** A `PRD.md` and three issue files in `issues/` ready for an agent to grab one at a time.
 
-**Why.** AI loves to code horizontally: all the parsing, then all the logic, then all the output. No working feature until phase three. Vertical slices ship one thin path through every layer at a time. You get feedback at the end of slice 1, not slice 3.
+### Step 2.1. Generate the PRD
 
-**Steps:**
+In the same agent session (so `PLAN.md` is still in context), paste:
 
-- In the same agent session (so it still has `PLAN.md` loaded), paste:
+```
+/to-prd PLAN.md → PRD.md at the repo root
+```
 
-  > *Run /to-prd to generate `PRD.md`. Then run /to-issues to split it into independently grabbable vertical-slice issues under `issues/`.*
+### Step 2.2. Verify the PRD
 
-- Read the PRD once. If the destination is wrong, say so and ask for a revision. Trust the language doc, not the agent's invented terms.
+```bash
+test -f PRD.md && head -60 PRD.md
+```
 
-- Read each issue file. For each, ask:
-  - Is this slice independently shippable? Could an agent grab it without loading the others?
-  - Is it horizontal in disguise? "All parsers" is horizontal. "The summary subcommand end-to-end" is vertical.
-  - Is the acceptance criterion observable? "Returns the right value" is not observable. "Prints `3 commits` when run on the seeded test repo" is.
+Skim once. If a section is wrong, tell the agent:
 
-- For `commit-stats` you should end with three issues:
-  - `001-summary-subcommand.md` — `commit-stats summary` prints total commits, authors, and AI-assisted count.
-  - `002-by-author-subcommand.md` — groups commits by author with AI-assisted percentage per author.
-  - `003-since-flag.md` — adds a `--since` flag that filters commits by date.
+```
+PRD.md section X is wrong. <describe>. Revise.
+```
 
-**Output.** `PRD.md` plus three files under `issues/`.
+### Step 2.3. Split into issues
+
+Paste:
+
+```
+/to-issues PRD.md → issues/ directory. Three vertical slices. Each independently grabbable.
+```
+
+### Step 2.4. Verify the issues
+
+```bash
+ls -1 issues/
+```
+
+You should see three files:
+
+```
+001-summary-subcommand.md
+002-by-author-subcommand.md
+003-since-flag.md
+```
+
+For each issue, ask yourself:
+
+- Independently shippable? An agent could grab this without loading the others.
+- Vertical, not horizontal? *The summary subcommand end-to-end* is vertical. *All parsers* is horizontal.
+- Acceptance is observable? *Prints `3 commits` when run on the seeded test repo* is observable.
+
+If any issue is wrong, tell the agent to fix it.
 
 ---
 
 ## Exercise 3 — Ship slice 1 with TDD (~25 min)
 
-**Goal.** `commit-stats summary` ships, with bats tests that fail meaningfully when the implementation is wrong, and a clean commit on the branch.
+**Goal.** `commit-stats summary` ships. Bats tests pass. Atomic commits with attribution tags on a feature branch.
 
-**Why.** Tests-after lets the AI write tests that match its own (possibly wrong) implementation. Tests-first forces the AI to describe the behaviour first, then prove the implementation matches. Same red-green-refactor loop you would use on Robolectric for Android, on a host-side simulator for firmware, on Vitest for web.
+### Step 3.1. Branch off
 
-**Steps:**
+```bash
+git checkout -b feat/summary-subcommand
+```
 
-- Create a feature branch: `git checkout -b feat/summary-subcommand`.
+### Step 3.2. Run /tdd on the first issue
 
-- In the agent session, paste:
+Paste:
 
-  > *Run /tdd on `issues/001-summary-subcommand.md`. Use bats. One test, one implementation step, one commit. Then move to the next behaviour the issue calls for.*
+```
+/tdd issues/001-summary-subcommand.md. Use bats. One test, one implementation, one commit per cycle. Then move to the next behaviour.
+```
 
-- Watch the loop. The agent should:
-  1. Write a failing bats test in `tests/summary.bats`.
-  2. Run `bats tests/summary.bats`. Confirm it fails for the expected reason (not "command not found", but the actual assertion failing).
-  3. Implement the minimum bash to make the test pass.
-  4. Run the test again. Confirm green.
-  5. Refactor if needed. Test still passes.
-  6. Run `/commit`.
+### Step 3.3. Watch the loop
 
-- Repeat per acceptance criterion. Three or four cycles is normal for slice 1.
+For each acceptance criterion the agent should:
 
-- Push back when:
-  - The agent writes three tests up front before any implementation. *One at a time.*
-  - The agent skips the red step. *Confirm the test fails for the expected reason before implementing.*
-  - The agent over-mocks. *Use the real `git log` against `setup_test_repo`. Mocks-everywhere is a smell.*
+1. Write a failing bats test in `tests/summary.bats`.
+2. Run `bats tests/summary.bats`. **Confirm it fails for the expected reason** (not *command not found*, the actual assertion failing).
+3. Implement the minimum bash to make the test pass.
+4. Run the test again. Green.
+5. Refactor if needed. Test still passes.
+6. Run `/commit`.
 
-**Output.** Commits on the branch, each with `[ai-assisted]` or `[human-only]` attribution. `make ci` passes.
+Three or four cycles is normal for slice 1.
+
+### Step 3.4. Push back when
+
+- Agent writes three tests up front before any implementation → *one at a time*.
+- Agent skips the red step → *confirm the test fails for the expected reason before implementing*.
+- Agent over-mocks → *use the real `git log` against `setup_test_repo`*.
+
+### Step 3.5. Verify the slice ships
+
+```bash
+make ci                    # lint + test, must pass
+./commit-stats summary     # prints stats from this repo, exits 0
+git log --oneline -10      # commits with [ai-assisted] tags
+```
+
+If `make ci` fails, the slice is not done. Tell the agent to fix it.
 
 ---
 
-## Exercise 4 — PR, self-review, code-review, security-review (~25 min)
+## Exercise 4 — PR + three reviews (~25 min)
 
-**Goal.** A PR description, a fresh-context self-review, a standards-pushed code-review, and a security pass. Only HIGH findings block.
+**Goal.** A PR with description, three review reports (self-review, code-review, security-review), all HIGH findings addressed.
 
-**Why.** The agent that wrote the code is in the dumb zone. Reviews need a fresh context to land in the smart zone. Standards must be *pushed* to the reviewer (always loaded), separate from the *pulled* skills the implementer used. Confidence tiers (HIGH / MEDIUM / LOW) cut review noise by about 80%.
+### Step 4.1. Push the branch and open a PR
 
-**Steps:**
+```bash
+git push -u origin feat/summary-subcommand
+gh pr create --fill
+```
 
-- Push your branch and open a PR (or use `gh pr create`).
+### Step 4.2. Generate the PR description
 
-- In the same session, run:
+In the same agent session:
 
-  > */pr — generate the PR description from the diff and the commit log. Paste the result into the PR body.*
+```
+/pr generate the PR description from the diff and the commit log on this branch. Output as markdown.
+```
 
-- **Clear context.** Start a fresh agent session.
+Paste the result into the PR body:
 
-- In the fresh session:
+```bash
+gh pr edit --body "$(cat /tmp/pr-body.md)"     # or paste through the GitHub UI
+```
 
-  > */self-review on the diff between main and HEAD. Use HIGH/MEDIUM/LOW tiers. Refuse to run if you suspect you are in the same session as the implementer.*
+### Step 4.3. Self-review (clear context first)
 
-  Read every HIGH finding. Fix them or argue back. MEDIUM and LOW are comments only.
+Clear the agent context:
 
-- **Clear context again.**
+```
+/clear
+```
 
-- In another fresh session:
+Then paste:
 
-  > */code-review on the diff. Push the bash standards from `CLAUDE.md`. HIGH/MEDIUM/LOW tiers. Recommend merge / fix HIGH then merge / needs deeper review.*
+```
+/self-review the diff between main and HEAD. Use HIGH/MEDIUM/LOW tiers. Refuse to run if you suspect you are in the same session as the implementer.
+```
 
-- **Clear context once more.** (Yes really. Each review is a fresh smart-zone.)
+Read every HIGH finding. Either fix it (locally, then push) or argue back with reasoning.
 
-- In a final fresh session:
+### Step 4.4. Code review (clear context again)
 
-  > */security-review on the diff. Categories: command injection, path traversal, argument parsing, subprocess discipline, output integrity, supply chain, secrets.*
+```
+/clear
+```
 
-- Address every HIGH from any of the three reviews. Merge when all three reviewers say *merge*.
+Then:
 
-**Output.** A merged PR. Tagged commits. Three review reports in the PR comments.
+```
+/code-review the diff. Push the bash standards from CLAUDE.md. HIGH/MEDIUM/LOW tiers. End with a recommendation: merge / fix HIGH then merge / needs deeper review.
+```
+
+Address every HIGH.
+
+### Step 4.5. Security review (clear context one more time)
+
+```
+/clear
+```
+
+Then:
+
+```
+/security-review the diff. Categories: command injection, path traversal, argument parsing, subprocess discipline, output integrity, supply chain, secrets.
+```
+
+Address every HIGH.
+
+### Step 4.6. Merge
+
+When all three reviewers say *merge*:
+
+```bash
+gh pr merge --squash
+```
+
+### Step 4.7. Verify
+
+```bash
+git checkout main
+git pull
+make ci                                # passes on main
+git log --oneline | head -5            # see the merge
+gh pr view --json reviewComments       # three review reports attached
+```
 
 ---
 
 ## Exercise 5 — Close the loop (~15 min)
 
-**Goal.** One concrete update to a skill or `CLAUDE.md` so the next agent does not repeat a mistake you saw in this session.
+**Goal.** One concrete update to a skill or `CLAUDE.md` so the next agent does not repeat a mistake from this session.
 
-**Why.** The improvement loop is what turns AI from a one-shot tool into a compounding asset. *Treat your skills like products, not docs.* When AI ships bad code, fix the skill, not just the PR.
+### Step 5.1. Identify one failure
 
-**Steps:**
+Look back at the session. Pick one moment the agent did something wrong, slow, or off-style. Examples:
 
-- Look back at the session. Pick one moment where the agent did something wrong, slow, or off-style. Examples:
-  - It tried to write three tests up front. The `/tdd` skill should have stopped it.
-  - It missed a quoting issue. The `/code-review` skill should have flagged it.
-  - It forgot the attribution tag. The `/commit` skill should have refused to commit without one.
+- Wrote three tests up front. The `/tdd` skill should have stopped it.
+- Missed a quoting issue. The `/code-review` skill should have flagged it.
+- Forgot the attribution tag. The `/commit` skill should have refused without it.
 
-- Open the relevant skill. Read it. Find the rule that should have caught the mistake.
+### Step 5.2. Open the relevant skill
 
-- One of three things will be true:
-  1. The rule exists and the agent ignored it. **Make the rule more prominent.** Move it up. Restate it bluntly.
-  2. The rule does not exist. **Add it.** With a concrete example.
-  3. The rule exists but is wrong. **Fix it.** Note why.
+```bash
+code .agent/skills/<skill-name>/SKILL.md
+```
 
-- Commit the skill change with `[ai-assisted]` if you used the agent to draft it, `[human-only]` otherwise.
+(Replace `code` with your editor: `nano`, `vim`, `cursor`, etc.)
 
-- Note the change in `PLAN.md` at the bottom under `## Skill updates this session`.
+### Step 5.3. Apply one of three fixes
 
-**Output.** One updated `SKILL.md`. One commit. One note in `PLAN.md`.
+1. **Rule exists, agent ignored it.** Make it more prominent. Move it up. Restate it bluntly.
+2. **Rule does not exist.** Add it. Include a concrete example.
+3. **Rule exists but is wrong.** Fix it. Note why.
+
+### Step 5.4. Commit the change
+
+```bash
+git add .agent/skills/<skill-name>/SKILL.md
+git commit -m "chore(skills): tighten <skill-name> rule on <topic> [ai-assisted]"
+```
+
+(Use `[human-only]` if you wrote the change without AI help.)
+
+### Step 5.5. Note it in PLAN.md
+
+Append to `PLAN.md`:
+
+```markdown
+## Skill updates this session
+
+- `<skill-name>`: <what changed and why>
+```
+
+```bash
+git add PLAN.md
+git commit -m "docs(plan): note skill update [human-only]"
+```
 
 ---
 
 ## Bring to office hours
 
-- All four files (`PLAN.md`, `PRD.md`, `issues/*.md`, the merged PR link).
-- The numbers: time-to-first-commit, number of `/plan` iterations, test coverage delta, slop iterations avoided, count of `[ai-assisted]` versus `[human-only]` commits.
-- One thing the agent got obviously wrong, even with the skills loaded.
-- The skill update from Exercise 5.
+Before your slot with Franco, gather:
+
+- [ ] `PLAN.md`
+- [ ] `PRD.md`
+- [ ] `issues/*.md`
+- [ ] The merged PR link
+- [ ] The numbers:
+  - Time-to-first-commit
+  - Number of `/plan` iterations (questions asked)
+  - Test coverage delta
+  - Slop iterations avoided (count of times you pushed back vs accepted)
+  - `[ai-assisted]` vs `[human-only]` commit count
+- [ ] One thing the agent got obviously wrong, even with the skills loaded
+- [ ] The skill update from Exercise 5
+
+Quick way to grab the commit counts:
+
+```bash
+git log --oneline | grep -c '\[ai-assisted\]'
+git log --oneline | grep -c '\[human-only\]'
+```
+
+---
+
+## Troubleshooting
+
+**Agent does not see skills.** Check the symlink: `ls -la .claude/skills` should resolve to `.agent/skills/`. Fix:
+
+```bash
+rm -f .claude/skills
+ln -s ../.agent/skills .claude/skills
+```
+
+**`bats: command not found`.** Install bats-core (see Prerequisites).
+
+**`shellcheck: command not found`.** Install shellcheck (see Prerequisites).
+
+**`./commit-stats: Permission denied`.** Make it executable:
+
+```bash
+chmod +x commit-stats
+```
+
+**Agent commits without `[ai-assisted]` tag.** The `/commit` skill should refuse. If it does not, that is your Exercise 5 fix.
+
+**`gh pr create` fails with auth error.** Run `gh auth login` and retry.
 
 ---
 
@@ -195,7 +421,7 @@ You walk out with the full nine-step workflow run end-to-end on real code:
 
 1. Ticket intake (`/plan`)
 2. Plan, PRD, vertical slices (`/to-prd`, `/to-issues`)
-3. Develop (`/tdd` red-green-refactor)
+3. Develop (`/tdd`)
 4. Commit (`/commit` with attribution)
 5. PR (`/pr`)
 6. Self-review (`/self-review` in fresh context)
@@ -203,4 +429,4 @@ You walk out with the full nine-step workflow run end-to-end on real code:
 8. Security review (`/security-review`)
 9. Capture failures back into the skills (close the loop)
 
-Same shape on your stack. Robolectric replaces bats for Android. A host-side simulator replaces bats for firmware. Detekt + Compose Rules replace shellcheck for Kotlin. MISRA-C replaces shellcheck for firmware C. The workflow does not change.
+Same shape on your stack. Swap bats for your test runner, swap shellcheck for your linter, swap the bash standards for your team's. The workflow does not change.
