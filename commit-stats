@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# commit-stats - scan a git log and print stats including AI-attribution counts
+#
+# Workshop scaffold. Subcommands are built during the workshop. See README.md.
+#
+
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+commit-stats - scan a git log and print stats
+
+Usage:
+  commit-stats <subcommand> [options]
+
+Subcommands:
+  summary              Print total commits, authors, and AI-assisted count.
+  by-author            Group commits by author with AI-assisted percentage per author.
+
+Options:
+  --since <date>       Only include commits since the given date (e.g. 2026-01-01).
+  -h, --help           Show this help.
+
+Examples:
+  commit-stats summary
+  commit-stats by-author --since 2026-01-01
+EOF
+}
+
+main() {
+  if [[ $# -lt 1 ]]; then
+    usage
+    exit 1
+  fi
+
+  local subcommand="$1"
+  shift
+
+  case "$subcommand" in
+    -h|--help|help)
+      usage
+      ;;
+    summary)
+      printf 'commit-stats: summary not yet implemented\n' >&2
+      exit 64
+      ;;
+    by-author)
+      printf 'commit-stats: by-author not yet implemented\n' >&2
+      exit 64
+      ;;
+    *)
+      printf 'commit-stats: unknown subcommand: %s\n' "$subcommand" >&2
+      usage >&2
+      exit 64
+      ;;
+  esac
+}
+
+main "$@"
